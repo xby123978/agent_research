@@ -1,0 +1,42 @@
+# 知识卡片 Skill 定义（架构 3.5.1）
+skill:
+  name: knowledge_card
+  version: "1.0"
+  description: 抽取核心知识点生成结构化知识卡片，支持 Obsidian 同步
+  input_schema:
+    type: object
+    properties:
+      topic:
+        type: string
+      papers:
+        type: array
+        items:
+          type: object
+    required:
+      - topic
+  output_schema:
+    type: object
+    properties:
+      cards:
+        type: array
+        items:
+          type: object
+      quality_score:
+        type: number
+  flow:
+    - id: extract
+      name: 知识点抽取
+      after: plan
+      desc: 从文献摘要中抽取核心知识点
+    - id: card_build
+      name: 卡片构建
+      after: extract
+      desc: 生成结构化知识卡片含定义/重要度
+    - id: sync_obsidian
+      name: Obsidian 同步
+      after: card_build
+      desc: 同步到 outputs/notes/（本地实现，非 Obsidian Docker）
+  quality_gates:
+    - stage: card_build
+      threshold: 0.6
+      fail_action: degrade

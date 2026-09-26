@@ -1,0 +1,46 @@
+# 项目全局配置
+project:
+  name: research-agent
+  version: "0.1.0-mvp"
+  environment: development   # development | production
+
+# 研究任务默认参数
+research:
+  default_depth: standard        # basic | standard | deep
+  default_max_papers: 20
+  # 质量门限（对应架构 6.1）
+  quality_gates:
+    plan_score_threshold: 0.75  # 规划阶段计划评分下限
+    min_recall_papers: 20        # 检索阶段召回文献下限（硬门限）
+    min_reading_papers: 8        # 精读阶段文献下限
+    max_reading_papers: 15       # 精读阶段文献上限
+    relevance_threshold: 0.85   # 相关性筛选阈值
+    quality_threshold: 7.0       # 学术质量评分阈值（0-10）
+    min_knowledge_points: 3      # 知识整理阶段知识点下限
+    min_report_length: 500       # 报告最小字数
+
+# 记忆模块配置
+memory:
+  short_term:
+    retention_days: 7            # 短期记忆保留天数
+    max_window: 50               # 全量窗口召回上限
+  long_term:
+    collection_name: research_kb
+    vector_size: 1024            # BGE-M3 输出维度（降级模型为 384）
+    # 混合召回权重（架构 3.3.1）
+    recall_weights:
+      vector: 0.6
+      keyword: 0.2
+      graph: 0.2
+
+# MCP 协议配置
+mcp:
+  request_timeout: 30           # 秒
+  max_retries: 3                # 指数退避重试次数
+  retry_backoff: 2.0            # 退避因子
+
+# 日志配置
+logging:
+  level: INFO                   # DEBUG | INFO | WARN | ERROR
+  rotation: "10 MB"
+  retention: "30 days"

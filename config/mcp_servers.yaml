@@ -1,0 +1,40 @@
+# MCP 服务配置
+# 架构 3.4.2 内置 MCP 服务清单
+# 检索源已切换为 OpenAlex + CrossRef（国内访问稳定）
+# Filesystem / KnowledgeBase 本地实现，非 Docker 依赖
+
+servers:
+  - name: academic_search
+    transport: inprocess         # 阶段二：进程内调用（非 stdio 独立进程）
+    enabled: true
+    description: 学术检索服务（OpenAlex + CrossRef）
+    tools:
+      - search_openalex
+      - search_crossref
+
+  - name: filesystem
+    transport: inprocess
+    enabled: true
+    description: 本地文件系统服务（限 outputs/ 与 data/ 目录）
+    tools:
+      - filesystem
+
+  - name: knowledge_base
+    transport: inprocess
+    enabled: true
+    description: 记忆读写与知识图谱查询（对接四层记忆）
+    tools:
+      - knowledge_base
+
+  - name: document_processing
+    transport: inprocess
+    enabled: true
+    description: 文档处理与 PDF 解析（Marker 未安装时打桩降级）
+    tools:
+      - parse_pdf
+      - extract_metadata
+
+  - name: code_execution
+    transport: stdio
+    enabled: false               # 阶段三接入（需沙箱隔离）
+    description: Python 代码执行服务

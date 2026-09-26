@@ -1,0 +1,11 @@
+# 独立 MCP Server 进程目录（对应架构 §8）
+#
+# 阶段二采用进程内调用（inprocess transport），未拆独立进程。
+# 此目录供阶段三演进：将 src/mcp/servers.py 中的 Server 拆为
+# 独立可执行脚本，通过 stdio/HTTP 真实传输。
+#
+# 当前实现：
+# - AcademicSearchServer  inprocess
+# - DocumentProcessorServer  inprocess
+# - FilesystemServer  inprocess
+# - KnowledgeBaseServer  inprocess

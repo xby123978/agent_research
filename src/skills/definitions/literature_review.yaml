@@ -1,0 +1,52 @@
+# 文献综述 Skill 定义（架构 3.5.1）
+skill:
+  name: literature_review
+  version: "1.0"
+  description: 围绕主题系统化检索并整理文献，产出结构化文献综述
+  input_schema:
+    type: object
+    properties:
+      topic:
+        type: string
+        description: 研究主题
+      max_papers:
+        type: integer
+        description: 最大检索文献数
+        default: 10
+    required:
+      - topic
+  output_schema:
+    type: object
+    properties:
+      bibliography:
+        type: array
+        items:
+          type: object
+      summary:
+        type: string
+      quality_score:
+        type: number
+  # flow 步骤（架构 3.5.1 flow 字段）
+  flow:
+    - id: retrieve
+      name: 检索文献
+      tool: search_openalex
+      after: plan
+      desc: 调用 OpenAlex MCP 工具检索文献
+    - id: filter
+      name: 相关性筛选
+      after: retrieve
+      desc: 按引用数排序去重取 top N
+    - id: summarize
+      name: 摘要整理
+      after: filter
+      desc: 整理文献元数据与摘要
+    - id: review_quality
+      name: 质量评审
+      after: summarize
+      desc: 计算文献综述质量评分
+  # 质量门限（架构 3.5.1 quality_gates 字段）
+  quality_gates:
+    - stage: review_quality
+      threshold: 0.7
+      fail_action: degrade  # 不达标时降级返回，不阻断

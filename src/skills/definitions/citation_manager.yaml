@@ -1,0 +1,44 @@
+# 引用管理 Skill 定义（架构 3.5.1）
+skill:
+  name: citation_manager
+  version: "1.0"
+  description: 管理 BibTeX 与 CSL 引用，支持多引用格式输出
+  input_schema:
+    type: object
+    properties:
+      papers:
+        type: array
+        items:
+          type: object
+      style:
+        type: string
+        description: 引用格式（apa/ieee/mla）
+        default: apa
+    required:
+      - papers
+  output_schema:
+    type: object
+    properties:
+      bibliography:
+        type: array
+      bibtex:
+        type: string
+      quality_score:
+        type: number
+  flow:
+    - id: parse
+      name: 元数据解析
+      after: plan
+      desc: 解析文献元数据生成引用条目
+    - id: format
+      name: 格式化
+      after: parse
+      desc: 按目标样式格式化
+    - id: export_bibtex
+      name: BibTeX 导出
+      after: format
+      desc: 生成 .bib 字符串便于复用
+  quality_gates:
+    - stage: format
+      threshold: 0.7
+      fail_action: degrade

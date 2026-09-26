@@ -1,0 +1,35 @@
+# 模型配置
+# 主推理模型（生成类任务）
+primary_llm:
+  provider: deepseek          # deepseek | openai | ollama
+  model: deepseek-chat
+  temperature: 0.3
+  max_tokens: 4096
+  # 用于规划、知识抽取、报告撰写
+
+# 备选推理模型（核显场景降级为 1.5B）
+fallback_llm:
+  provider: ollama
+  model: qwen2.5:1.5b
+  temperature: 0.3
+  max_tokens: 4096
+
+# 嵌入模型（向量存储与召回）
+embedding:
+  provider: ollama            # ollama | sentence_transformers
+  model: bge-m3
+  # 降级方案：无 Ollama 时使用 sentence-transformers
+  fallback:
+    provider: sentence_transformers
+    model: all-MiniLM-L6-v2
+
+# JEV 决策模型（阶段三启用，MVP 阶段降级为大模型判断）
+# 核显场景：用 1.5B 替代 7B，CPU 也能跑
+jev:
+  enabled: false              # MVP 阶段关闭，阶段三开启
+  provider: ollama
+  model: qwen2.5:1.5b
+  temperature: 0.0            # 判断任务温度为 0
+  confidence_thresholds:      # 架构 3.6.1 分级策略
+    auto: 0.8                 # >=0.8 自动执行
+    review: 0.5               # 0.5-0.8 提交大模型复核

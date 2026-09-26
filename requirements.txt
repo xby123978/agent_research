@@ -1,0 +1,33 @@
+# ===== 核心框架 =====
+langgraph>=0.2.0
+gradio>=4.0.0
+
+# ===== 模型与嵌入 =====
+openai>=1.0.0            # DeepSeek/OpenAI 兼容接口
+httpx>=0.27.0            # 异步 HTTP 客户端
+sentence-transformers>=3.0.0  # 嵌入降级方案（无 Ollama 时）
+
+# ===== 向量与图数据库 =====
+qdrant-client>=1.10.0    # Qdrant Lite（支持本地内存模式）
+
+# ===== 结构化与配置 =====
+pydantic>=2.0.0
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# ===== 工具与文档 =====
+arxiv>=2.0.0             # arXiv 检索
+requests>=2.31.0         # Semantic Scholar 等通用 API
+pymupdf>=1.24.0          # PDF 解析（Marker 降级方案，本地 Python 库非 Docker）
+marker-py>=1.0.0         # Marker PDF 高质量解析（可选，未安装时降级 pymupdf）
+
+# ===== 日志与可观测性 =====
+loguru>=0.7.0
+
+# ===== REST API =====
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# ===== 测试 =====
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

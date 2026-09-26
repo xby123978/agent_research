@@ -1,0 +1,4 @@
+# 研究成果输出目录（对应架构 §8）
+# - archive/      任务完整档案（JSON + SQLite metrics）
+# - notes/       知识卡片同步（Obsidian 兼容）
+# - reports/     最终研究报告 Markdown

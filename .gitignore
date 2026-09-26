@@ -1,0 +1,81 @@
+# ===== 敏感配置（绝对不能提交）=====
+.env
+.env.*
+!.env.example
+
+# ===== API Key 文件 =====
+*.key
+*.pem
+secrets.json
+credentials.json
+
+# ===== 运行时数据 =====
+data/
+logs/
+outputs/archive/
+outputs/reports/
+outputs/obsidian/research_notes/
+outputs/notes/
+
+# ===== 缓存与编译产物 =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===== 虚拟环境 =====
+venv/
+.venv/
+env/
+ENV/
+.python-version
+
+# ===== 测试与类型检查缓存 =====
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# ===== IDE 与编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== HuggingFace 模型缓存 =====
+.cache/
+models--*/
+
+# ===== 临时文件 =====
+*.tmp
+*.bak
+*.log
