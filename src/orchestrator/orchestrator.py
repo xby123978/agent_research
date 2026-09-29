@@ -60,11 +60,15 @@ class Orchestrator:
         self.engineer = engineer or EngineerAgent(memory=self.memory)
         self.writer = writer or WriterAgent(memory=self.memory)
         # 各 Agent 阶段超时（秒）
+        # planner: 3 候选 × LLM(~6s) + OpenJev 首次加载(~7s) + JEV 评分(~6s) + 重试余量 = 180s
+        # collector: 多源检索(arXiv/OpenAlex/CrossRef) + JEV 筛选 = 150s
+        # engineer: 知识抽取(20 篇 × LLM) + JEV 写入校验 = 180s
+        # writer: 报告生成(5000+字) + JEV 事实校验 = 150s
         self._timeouts: dict[str, float] = {
-            "planner": 60,
+            "planner": 180,
             "collector": 150,
-            "engineer": 90,
-            "writer": 90,
+            "engineer": 180,
+            "writer": 150,
         }
         self._graph = self._build_graph()
 

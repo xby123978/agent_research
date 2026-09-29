@@ -27,11 +27,16 @@ import httpx
 
 from ..common.config import get_env
 from ..common.logger import get_logger
+from pathlib import Path
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 logger = get_logger(__name__)
+
+# 本地模型路径优先(避免 Windows symlink 问题)
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_LOCAL_OPENJEV = _PROJECT_ROOT / "models" / "openjev" / "qwen3.5-0.8b-nli-v2s-long"
 
 TaskType = Literal["scoring", "classification", "judgment"]
 
@@ -107,23 +112,39 @@ class _OpenJevBackend:
         self._label_map = {0: "contradiction", 1: "entailment", 2: "neutral"}
 
     def _ensure_loaded(self) -> bool:
-        """惰性加载模型。"""
+        """惰性加载模型。优先本地路径,fallback HF Hub。"""
         if self._loaded:
             return True
         try:
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             logger.info("加载 OpenJev 0.8B 判别模型...")
-            self._tok = AutoTokenizer.from_pretrained(
-                "AlexWortega/openjev",
-                subfolder="qwen3.5-0.8b-nli-v2s-long",
-                trust_remote_code=True,
-            )
-            self._model = AutoModelForSequenceClassification.from_pretrained(
-                "AlexWortega/openjev",
-                subfolder="qwen3.5-0.8b-nli-v2s-long",
-                trust_remote_code=True,
-            )
+
+            # 优先策略 1:本地路径(避免 Windows symlink + 跳过网络)
+            model_path = str(_LOCAL_OPENJEV) if _LOCAL_OPENJEV.exists() else None
+
+            if model_path:
+                logger.info(f"使用本地模型路径: {model_path}")
+                self._tok = AutoTokenizer.from_pretrained(
+                    model_path, trust_remote_code=True, local_files_only=True
+                )
+                self._model = AutoModelForSequenceClassification.from_pretrained(
+                    model_path, trust_remote_code=True, local_files_only=True
+                )
+            else:
+                # 策略 2:从 HF Hub 加载(网络下载到 cache)
+                logger.info("本地路径不存在,从 HF Hub 加载...")
+                self._tok = AutoTokenizer.from_pretrained(
+                    "AlexWortega/openjev",
+                    subfolder="qwen3.5-0.8b-nli-v2s-long",
+                    trust_remote_code=True,
+                )
+                self._model = AutoModelForSequenceClassification.from_pretrained(
+                    "AlexWortega/openjev",
+                    subfolder="qwen3.5-0.8b-nli-v2s-long",
+                    trust_remote_code=True,
+                )
+
             self._model.eval()
             if hasattr(self._model.config, "id2label"):
                 self._label_map = {
@@ -135,6 +156,12 @@ class _OpenJevBackend:
             return True
         except Exception as e:
             logger.warning(f"OpenJev 加载失败: {e}")
+            # 缺少 sentencepiece/tiktoken 时给出明确诊断
+            err_msg = str(e).lower()
+            if "sentencepiece" in err_msg or "tiktoken" in err_msg:
+                logger.error(
+                    "缺少 tokenizer 依赖,请执行: pip install sentencepiece tiktoken"
+                )
             return False
 
     def _nli_probs(self, premise: str, hypothesis: str) -> dict[str, float]:

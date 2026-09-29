@@ -60,7 +60,7 @@ Observation: 评估该方案的覆盖度与可执行性
 """
 
 # Tree of Thoughts 多候选
-TOT_CANDIDATES = 3  # 生成 3 个候选方案
+TOT_CANDIDATES = 2  # 生成 2 个候选方案（平衡质量与耗时）
 TOT_MAX_ROUNDS = 2  # 最多重试 2 轮
 TOT_MIN_SCORE = 0.75  # JEV 放行阈值
 
@@ -179,23 +179,33 @@ class Planner:
             return plan.quality_score
 
     def _parse_plan(self, raw: str, topic: str) -> ResearchPlan:
-        """解析 LLM 输出为 ResearchPlan。"""
+        """解析 LLM 输出为 ResearchPlan（多层兜底提取）。"""
         text = raw.strip()
+
+        # 策略 1:剥离 markdown 代码块
         if text.startswith("```"):
-            text = text.split("```")[1] if "```" in text[3:] else text
-            text = text.strip("`").strip()
-            if text.startswith("json"):
-                text = text[4:].strip()
+            # 去掉首行 ```json 或 ```
+            lines = text.split("\n")
+            if len(lines) >= 3:
+                # 去首尾的 ``` 行
+                inner = "\n".join(lines[1:-1])
+                text = inner.strip()
+            else:
+                text = text.strip("`").strip()
+                if text.startswith("json"):
+                    text = text[4:].strip()
+
+        # 策略 2:直接 JSON 解析
+        data: dict[str, Any] | None = None
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
+            # 策略 3:提取第一个完整 JSON 对象（平衡括号法,比 find/rfind 更稳）
             logger.warning("计划 JSON 解析失败，尝试宽松提取")
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start >= 0 and end > start:
-                data = json.loads(raw[start : end + 1])
-            else:
-                raise ResearchAgentError(f"无法解析研究计划: {raw[:200]}")
+            data = self._extract_json_object(raw)
+
+        if data is None:
+            raise ResearchAgentError(f"无法解析研究计划: {raw[:200]}")
 
         plan_id = f"plan_{uuid.uuid4().hex[:12]}"
         subtasks = [
@@ -214,6 +224,42 @@ class Planner:
             subtasks=subtasks,
             quality_score=float(data.get("quality_score", 0.0)),
         )
+
+    @staticmethod
+    def _extract_json_object(text: str) -> dict[str, Any] | None:
+        """用括号配平法提取第一个完整 JSON 对象。
+
+        比 find('{')/rfind('}') 更稳健:能处理字符串内包含 { } 的场景。
+        """
+        depth = 0
+        start = -1
+        in_string = False
+        escape = False
+        for i, c in enumerate(text):
+            if escape:
+                escape = False
+                continue
+            if c == "\\":
+                escape = True
+                continue
+            if c == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == "{":
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    try:
+                        return json.loads(text[start : i + 1])
+                    except json.JSONDecodeError:
+                        # 继续找下一个
+                        start = -1
+        return None
 
     def _fallback_template(self, topic: str, depth: ResearchDepth) -> ResearchPlan:
         """降级模板：固定 4 子任务覆盖标准维度。"""

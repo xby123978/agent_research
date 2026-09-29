@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import math
 import uuid
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
@@ -294,31 +296,73 @@ class LongTermMemory(BaseMemory):
     def _recall_keyword(
         self, query: str, top_k: int = 10
     ) -> list[tuple[float, dict[str, Any]]]:
-        """关键词召回：基于内容子串匹配 + Jaccard 相似度。
+        """关键词召回：BM25 算法（Okapi BM25）。
 
-        降级方案：无 Qdrant 全文检索时用本地遍历。
+        相比 Jaccard 相似度的优势：
+        - 引入 IDF 权重，稀有词贡献更高分
+        - 考虑文档长度归一化，避免长文档天然占优
+        - 词频饱和（k1 控制），避免高频词过度刷分
+
+        公式：sum_t IDF(t) * (f(t,d) * (k1+1)) / (f(t,d) + k1*(1-b+b*|d|/avgdl))
+        参数：k1=1.5（词频饱和）, b=0.75（文档长度归一化）
+
+        降级方案：无 Qdrant 全文检索时用本地遍历计算 BM25。
         """
         if self._local is None and self._qdrant is None:
             return []
-        # 从本地或 Qdrant 遍历 payload（MVP 用本地遍历）
-        all_payloads: list[tuple[str, dict[str, Any]]] = []
+        # 收集所有文档（mid, payload, 分词列表, 文档长度）
+        docs: list[tuple[str, dict[str, Any], list[str], int]] = []
         if self._local is not None:
             for i, mid in enumerate(self._local._ids):
-                all_payloads.append((mid, self._local._payloads[i]))
-        # 关键词分词（简化：按空格切分）
-        query_terms = set(query.lower().split())
+                p = self._local._payloads[i]
+                content = (p.get("content", "") or "").lower()
+                terms = content.split()
+                docs.append((mid, p, terms, len(terms)))
+        if not docs:
+            return []
+
+        # 查询分词（与原实现一致：按空格切分）
+        query_terms = query.lower().split()
         if not query_terms:
             return []
+
+        N = len(docs)
+        avgdl = sum(d[3] for d in docs) / N if N > 0 else 0
+        if avgdl == 0:
+            return []
+
+        # 计算 df(t)：包含 term 的文档数
+        df_map: dict[str, int] = {}
+        for _, _, terms, _ in docs:
+            for t in set(terms):
+                df_map[t] = df_map.get(t, 0) + 1
+
+        # IDF(t) = log((N - df + 0.5) / (df + 0.5) + 1)
+        idf_map: dict[str, float] = {
+            t: math.log((N - df + 0.5) / (df + 0.5) + 1)
+            for t, df in df_map.items()
+        }
+
+        # BM25 参数
+        k1, b = 1.5, 0.75
+
         scored: list[tuple[float, dict[str, Any]]] = []
-        for mid, p in all_payloads:
-            content = (p.get("content", "") or "").lower()
-            content_terms = set(content.split())
-            # Jaccard 相似度
-            if not query_terms or not content_terms:
+        for mid, p, terms, doc_len in docs:
+            if doc_len == 0:
                 continue
-            jaccard = len(query_terms & content_terms) / len(query_terms | content_terms)
-            if jaccard > 0:
-                scored.append((jaccard, {**p, "_id": mid}))
+            tf_map = Counter(terms)
+            score = 0.0
+            for t in query_terms:
+                f = tf_map.get(t, 0)
+                if f == 0:
+                    continue
+                idf = idf_map.get(t, 0)
+                # BM25 核心：词频饱和 + 文档长度归一化
+                denom = f + k1 * (1 - b + b * doc_len / avgdl)
+                score += idf * (f * (k1 + 1)) / denom
+            if score > 0:
+                scored.append((score, {**p, "_id": mid}))
+
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored[:top_k]
 

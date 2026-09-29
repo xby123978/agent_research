@@ -80,9 +80,13 @@ class PlannerAgent:
         )
         return task
 
-    @stage_timeout(60)
+    @stage_timeout(180)
     def plan(self, task: ResearchTask) -> ResearchTask:
-        """规划阶段：生成研究计划（硬超时 60s，避免 LLM 挂死）。"""
+        """规划阶段：生成研究计划（硬超时 180s）。
+
+        时间预算：3 候选 × LLM(~6s) + OpenJev 首次加载(~7s) + JEV 评分(~6s) ≈ 30s
+        重试 1 次 + 余量 = 180s
+        """
         task.status = TaskStatus.PENDING_PLANNING
         task.plan = self.planner.create_plan(task.topic, task.depth)
         task.status = TaskStatus.PENDING_SEARCH

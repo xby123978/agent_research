@@ -6,6 +6,8 @@ gradio>=4.0.0
 openai>=1.0.0            # DeepSeek/OpenAI 兼容接口
 httpx>=0.27.0            # 异步 HTTP 客户端
 sentence-transformers>=3.0.0  # 嵌入降级方案（无 Ollama 时）
+sentencepiece>=0.2.0     # Qwen2Tokenizer slow→fast 转换（OpenJev 必需）
+tiktoken>=0.7.0          # Qwen2Tokenizer 后端（OpenJev 必需）
 
 # ===== 向量与图数据库 =====
 qdrant-client>=1.10.0    # Qdrant Lite（支持本地内存模式）

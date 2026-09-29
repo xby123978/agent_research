@@ -75,6 +75,9 @@ desktop.ini
 .cache/
 models--*/
 
+# ===== 本地 OpenJev 模型（1.6GB,不入库）=====
+models/openjev/
+
 # ===== 临时文件 =====
 *.tmp
 *.bak
