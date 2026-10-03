@@ -143,8 +143,10 @@ class MemoryManager:
             # 用工作记忆图结构记录关联（简化版：按关键词重叠建边）
             related = self.working.search(content, top_k=1)
             if related and related[0].item_id and related[0].item_id != item_id:
-                self.working.add_edge(item_id, related[0].item_id, "similar")
-                logger.debug(f"自动建边: {item_id} ↔ {related[0].item_id}")
+                # 边权重 = 关键词重叠率（0~1），无 score 时用 0.5 兜底
+                ew = related[0].score if related[0].score and 0 < related[0].score <= 1 else 0.5
+                self.working.add_edge(item_id, related[0].item_id, "similar", weight=ew)
+                logger.debug(f"自动建边: {item_id} ↔ {related[0].item_id} (w={ew:.2f})")
         except Exception as e:
             logger.debug(f"自动建边失败（不影响主流程）: {e}")
 
@@ -166,6 +168,52 @@ class MemoryManager:
         # 按 score 排序（短期记忆 score=0 排后）
         deduped.sort(key=lambda x: x.score, reverse=True)
         return deduped[:top_k]
+
+    def search_with_context(
+        self,
+        query: str,
+        top_k: int = 5,
+        max_tokens: int | None = None,
+        layers: list[str] | None = None,
+    ) -> tuple[list[MemoryItem], str]:
+        """跨层召回 + 短期记忆摘要（方案 B 接口）。
+
+        返回 (memory_items, short_term_summary)：
+        - memory_items: 跨层召回的记忆条目（短期原文 + 长期语义等）
+        - short_term_summary: 旧轮次累积摘要，供 Agent 拼 prompt 时作为前置上下文
+
+        Args:
+            query: 查询文本
+            top_k: 每层召回上限
+            max_tokens: token 预算，短期记忆原文 + 摘要按此裁剪。
+                        None 不限制。长期/工作/偏好记忆不受此预算约束。
+            layers: 参与召回的层级，默认 ["short_term", "long_term"]
+        """
+        layers = layers or ["short_term", "long_term"]
+        summary = ""
+        results: list[MemoryItem] = []
+
+        # 短期记忆：用 search_with_summary 拿原文 + 摘要
+        if "short_term" in layers and isinstance(self.short_term, ShortTermMemory):
+            recent, summary = self.short_term.search_with_summary(
+                query, top_k=top_k, max_tokens=max_tokens
+            )
+            results.extend(recent)
+        elif "short_term" in layers:
+            results.extend(self.short_term.search(query, top_k))
+
+        if "working" in layers and self.working is not None:
+            results.extend(self.working.search(query, top_k))
+        if "long_term" in layers and self.long_term is not None:
+            results.extend(self.long_term.search(query, top_k))
+        if "preference" in layers and self.preference is not None:
+            results.extend(self.preference.search(query, top_k))
+
+        # 去重 + 排序
+        seen: set[str] = set()
+        deduped = [x for x in results if not (x.item_id in seen or seen.add(x.item_id))]  # type: ignore[func-returns-value]
+        deduped.sort(key=lambda x: x.score, reverse=True)
+        return deduped[:top_k], summary
 
     def get(self, item_id: str, layer: str = "auto") -> MemoryItem | None:
         if layer in ("short_term", "auto"):

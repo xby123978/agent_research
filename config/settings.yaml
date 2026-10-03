@@ -23,7 +23,10 @@ research:
 memory:
   short_term:
     retention_days: 7            # 短期记忆保留天数
-    max_window: 50               # 全量窗口召回上限
+    max_window: 20               # 滑动窗口：内存保留最近 N 轮原文
+    summary_trigger: 5           # 窗口溢出 N 条后触发一次 LLM 摘要压缩
+    summary_token_budget: 800    # 单次召回中摘要部分最多占用的 token 数
+    summary_max_chars: 1200      # 摘要最大字符数（防止单次摘要过长）
   long_term:
     collection_name: research_kb
     vector_size: 1024            # BGE-M3 输出维度（降级模型为 384）

@@ -204,21 +204,32 @@ class LongTermMemory(BaseMemory):
                 return hits[0][0]
         return None
 
+    # RRF 平滑常数：业界标准 k=60，缓解头部排名差异
+    _RRF_K = 60
+
     def search(self, query: str, top_k: int = 5) -> list[MemoryItem]:
         """混合召回（架构 3.3.1）：向量 60% + 关键词 20% + 图谱 20%。
 
-        三路召回后按权重融合分数，去重排序取 top_k。
-        降级：某路召回失败时，该路权重归零并重新归一化其他路权重。
+        融合方法：加权 RRF (Reciprocal Rank Fusion)
+            fused_score(mid) = Σ_path  w_path / (k + rank_path(mid))
+
+        优势（相比 CombSUM 加权求和）：
+        - 只看每路排名，完全无视分数量纲，天然抗 BM25/余弦/图谱分异构
+        - 加权系数 w_path 真正起作用，不会被某路高分污染
+        - k=60 平滑头部排名差异（rank=1 与 rank=2 差距不至于过大）
+
+        降级：某路召回为空时该路权重归零并重新归一化其他路权重。
         """
         settings = get_settings().get("memory", {}).get("long_term", {})
         weights: dict[str, float] = settings.get("recall_weights", {
             "vector": 0.6, "keyword": 0.2, "graph": 0.2,
         })
 
-        # 三路召回
-        vector_hits = self._recall_vector(query, top_k=max(top_k * 2, 10))
-        keyword_hits = self._recall_keyword(query, top_k=max(top_k * 2, 10))
-        graph_hits = self._recall_graph(query, top_k=max(top_k * 2, 10))
+        # 三路召回（取 2*top_k 扩大候选池，保证 RRF 有足够候选）
+        candidate_k = max(top_k * 2, 10)
+        vector_hits = self._recall_vector(query, top_k=candidate_k)
+        keyword_hits = self._recall_keyword(query, top_k=candidate_k)
+        graph_hits = self._recall_graph(query, top_k=candidate_k)
 
         # 路径失败时权重归零并归一化
         if not vector_hits:
@@ -230,33 +241,62 @@ class LongTermMemory(BaseMemory):
         total_w = sum(weights.values())
         if total_w == 0:
             return []  # 三路全失败
-        # 归一化
         weights = {k: v / total_w for k, v in weights.items()}
 
-        # 融合分数：每路分数归一化到 [0,1] 后加权
-        merged: dict[str, tuple[float, dict[str, Any]]] = {}
-        for score, payload in vector_hits:
-            mid = payload.get("_id", "")
-            merged[mid] = (score * weights["vector"], payload)
-        for score, payload in keyword_hits:
-            mid = payload.get("_id", "")
-            if mid in merged:
-                old_score, old_pl = merged[mid]
-                merged[mid] = (old_score + score * weights["keyword"], old_pl)
-            else:
-                merged[mid] = (score * weights["keyword"], payload)
-        for score, payload in graph_hits:
-            mid = payload.get("_id", "")
-            if mid in merged:
-                old_score, old_pl = merged[mid]
-                merged[mid] = (old_score + score * weights["graph"], old_pl)
-            else:
-                merged[mid] = (score * weights["graph"], payload)
+        # 构建每路的 rank 表：mid → rank(从 1 开始)
+        # 命中越靠前 rank 越小，RRF 分数越大
+        def _to_rank(
+            hits: list[tuple[float, dict[str, Any]]],
+        ) -> dict[str, int]:
+            return {
+                payload.get("_id", ""): idx + 1
+                for idx, (_s, payload) in enumerate(hits)
+                if payload.get("_id", "")
+            }
 
-        # 按融合分数排序取 top_k
-        ranked = sorted(merged.items(), key=lambda x: x[1][0], reverse=True)[:top_k]
+        rank_vector = _to_rank(vector_hits) if weights["vector"] > 0 else {}
+        rank_keyword = _to_rank(keyword_hits) if weights["keyword"] > 0 else {}
+        rank_graph = _to_rank(graph_hits) if weights["graph"] > 0 else {}
+
+        # 收集所有候选 mid（取并集）
+        all_mids: set[str] = set()
+        all_mids.update(rank_vector.keys())
+        all_mids.update(rank_keyword.keys())
+        all_mids.update(rank_graph.keys())
+
+        # 构建 mid → payload 映射（取首个出现的 payload，优先级 vector > keyword > graph）
+        payload_map: dict[str, dict[str, Any]] = {}
+        for _s, p in vector_hits:
+            mid = p.get("_id", "")
+            if mid and mid not in payload_map:
+                payload_map[mid] = p
+        for _s, p in keyword_hits:
+            mid = p.get("_id", "")
+            if mid and mid not in payload_map:
+                payload_map[mid] = p
+        for _s, p in graph_hits:
+            mid = p.get("_id", "")
+            if mid and mid not in payload_map:
+                payload_map[mid] = p
+
+        # RRF 融合：fused = Σ w_path / (k + rank_path)
+        k = self._RRF_K
+        fused: dict[str, float] = {}
+        for mid in all_mids:
+            score = 0.0
+            if (r := rank_vector.get(mid)) is not None:
+                score += weights["vector"] / (k + r)
+            if (r := rank_keyword.get(mid)) is not None:
+                score += weights["keyword"] / (k + r)
+            if (r := rank_graph.get(mid)) is not None:
+                score += weights["graph"] / (k + r)
+            fused[mid] = score
+
+        # 按 RRF 分数降序取 top_k
+        ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)[:top_k]
         out: list[MemoryItem] = []
-        for item_id, (score, payload) in ranked:
+        for item_id, score in ranked:
+            payload = payload_map.get(item_id, {})
             out.append(
                 MemoryItem(
                     item_id=item_id,
@@ -369,7 +409,14 @@ class LongTermMemory(BaseMemory):
     def _recall_graph(
         self, query: str, top_k: int = 10
     ) -> list[tuple[float, dict[str, Any]]]:
-        """图谱关联召回：通过工作记忆图结构找关联节点。
+        """图谱关联召回：多因子评分 = 路径分 × 节点重要性 × 查询相关性。
+
+        五个因子（详见 WorkingMemory.graph_search 文档）：
+        1. 边权重 — 建边时的实例强度
+        2. 路径长度衰减 — decay^hop
+        3. 节点重要性 — 度中心性
+        4. 关系类型权重 — cites/supports/contradicts/similar/related
+        5. 查询相关性 — 由本方法注入语义相似度回调（embedding 余弦）
 
         降级：工作记忆不可用时返回空（该路权重归零）。
         """
@@ -377,14 +424,46 @@ class LongTermMemory(BaseMemory):
             from .working import WorkingMemory
 
             wm = WorkingMemory()
-            related = wm.search(query, top_k=top_k)
+
+            # 构建语义相关性回调：用 embedding 余弦相似度
+            # 降级：embedding 不可用时返回 None，graph_search 内部用关键词重叠率兜底
+            relevance_fn: Any = None
+            try:
+                emb = self._get_embedding()
+                query_vec = emb.embed(query)
+                if isinstance(query_vec[0], list):
+                    query_vec = query_vec[0]
+                import numpy as np
+
+                qv = np.asarray(query_vec, dtype=np.float32)
+                qn = float(np.linalg.norm(qv)) or 1.0
+
+                def _semantic_relevance(_nid: str, content: str) -> float:
+                    try:
+                        cv = emb.embed(content)
+                        if isinstance(cv[0], list):
+                            cv = cv[0]
+                        cv_arr = np.asarray(cv, dtype=np.float32)
+                        cn = float(np.linalg.norm(cv_arr)) or 1.0
+                        return float(np.dot(qv, cv_arr) / (qn * cn))
+                    except Exception:
+                        return 0.0
+
+                relevance_fn = _semantic_relevance
+            except Exception as e:
+                logger.debug(f"图谱召回语义回调降级为关键词匹配: {e}")
+
+            related = wm.graph_search(
+                query,
+                top_k=top_k,
+                max_depth=2,
+                query_relevance_fn=relevance_fn,
+            )
             scored: list[tuple[float, dict[str, Any]]] = []
-            for item in related:
+            for score, item in related:
                 if item.item_id and item.content:
-                    # 图谱关联分数用 item.score 或固定 0.5
-                    s = item.score if item.score > 0 else 0.5
                     scored.append((
-                        s,
+                        score,
                         {
                             "content": item.content,
                             "metadata": item.metadata,
