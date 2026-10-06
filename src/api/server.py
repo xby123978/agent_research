@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from src.common.config import ensure_dirs
 from src.common.logger import get_logger, set_trace_id
 from src.memory.manager import get_memory
-from src.mcp.client import get_mcp_client
+from src.mcp_layer.client import get_mcp_client
 from src.orchestrator import get_orchestrator
 from src.skills.citation_manager import CitationManagerSkill
 from src.skills.knowledge_card import KnowledgeCardSkill

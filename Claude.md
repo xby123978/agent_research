@@ -38,7 +38,7 @@
 |------|----------|----------|
 | 编程语言 | Python | 3.11+ |
 | Agent编排 | LangGraph | ≥0.2.0 |
-| MCP协议 | @modelcontextprotocol/sdk（Python版） | ≥0.3.0 |
+| MCP协议 | 官方 mcp Python SDK（FastMCP / ClientSession） | ≥1.9,<2 |
 | 向量数据库 | Qdrant（本地持久化模式 / Server） | ≥1.10 |
 | 图数据库 | Neo4j Community | ≥5.15 |
 | 本地模型部署 | Ollama | 最新版 |

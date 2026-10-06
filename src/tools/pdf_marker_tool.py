@@ -40,7 +40,7 @@ class PdfMarkerTool(BaseTool):
         except ImportError:
             pass
         try:
-            import fitz  # noqa: F401  PyMuPDF
+            import pymupdf  # noqa: F401  PyMuPDF（勿用 fitz 别名，其 deprecation 警告会污染 stdout）
 
             return "pymupdf"
         except ImportError:
@@ -51,13 +51,14 @@ class PdfMarkerTool(BaseTool):
         file_path = kwargs.get("file_path", "")
         max_pages = int(kwargs.get("max_pages", 20))
         if not file_path:
-            return ToolResult(success=False, error="缺少 file_path", duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="parse_pdf", success=False, error="缺少 file_path", duration_ms=(time.time() - start) * 1000)
 
         if self._backend == "marker":
             return self._parse_with_marker(file_path, max_pages, start)
         if self._backend == "pymupdf":
             return self._parse_with_pymupdf(file_path, max_pages, start)
         return ToolResult(
+            tool_name="parse_pdf",
             success=False,
             error="PDF 解析不可用（marker 与 pymupdf 均未安装，请 pip install marker-py 或 pymupdf）",
             duration_ms=(time.time() - start) * 1000,
@@ -74,6 +75,7 @@ class PdfMarkerTool(BaseTool):
             text, _, _ = text_from_rendered(rendered)
             meta = self._extract_meta_pymupdf(file_path)
             return ToolResult(
+                tool_name="parse_pdf",
                 success=True,
                 content=[{"type": "text", "text": text, "metadata": meta, "backend": "marker"}],
                 duration_ms=(time.time() - start) * 1000,
@@ -84,7 +86,7 @@ class PdfMarkerTool(BaseTool):
 
     def _parse_with_pymupdf(self, file_path: str, max_pages: int, start: float, fallback_err: str = "") -> ToolResult:
         try:
-            import fitz
+            import pymupdf as fitz
 
             doc = fitz.open(file_path)
             pages_to_read = min(len(doc), max_pages)
@@ -93,12 +95,14 @@ class PdfMarkerTool(BaseTool):
             meta = self._extract_meta_pymupdf(file_path)
             backend = "pymupdf" + ("(marker降级)" if fallback_err else "")
             return ToolResult(
+                tool_name="parse_pdf",
                 success=True,
                 content=[{"type": "text", "text": text, "metadata": meta, "backend": backend}],
                 duration_ms=(time.time() - start) * 1000,
             )
         except Exception as e:
             return ToolResult(
+                tool_name="parse_pdf",
                 success=False,
                 error=f"PDF 解析失败（{fallback_err or e}）",
                 duration_ms=(time.time() - start) * 1000,
@@ -107,7 +111,7 @@ class PdfMarkerTool(BaseTool):
     @staticmethod
     def _extract_meta_pymupdf(file_path: str) -> dict:
         try:
-            import fitz
+            import pymupdf as fitz
 
             doc = fitz.open(file_path)
             info = doc.metadata or {}

@@ -61,6 +61,7 @@ class KnowledgeBaseTool(BaseTool):
                     layer_list = [layers]
                 items = memory.search(query, top_k=top_k, layers=layer_list)
                 return ToolResult(
+                    tool_name="knowledge_base",
                     success=True,
                     content=[i.model_dump() for i in items],
                     duration_ms=(time.time() - start) * 1000,
@@ -71,6 +72,7 @@ class KnowledgeBaseTool(BaseTool):
                 metadata = kwargs.get("metadata", {})
                 item_id = memory.add(content, metadata=metadata, layer=layer)
                 return ToolResult(
+                    tool_name="knowledge_base",
                     success=bool(item_id),
                     content=[{"item_id": item_id}],
                     duration_ms=(time.time() - start) * 1000,
@@ -79,15 +81,16 @@ class KnowledgeBaseTool(BaseTool):
                 item_id = kwargs.get("item_id", "")
                 item = memory.get(item_id)
                 if not item:
-                    return ToolResult(success=False, error="条目不存在", duration_ms=(time.time() - start) * 1000)
+                    return ToolResult(tool_name="knowledge_base", success=False, error="条目不存在", duration_ms=(time.time() - start) * 1000)
                 return ToolResult(
+                    tool_name="knowledge_base",
                     success=True,
                     content=[item.model_dump()],
                     duration_ms=(time.time() - start) * 1000,
                 )
             if action == "graph":
                 if memory.working is None:
-                    return ToolResult(success=False, error="工作记忆未初始化", duration_ms=(time.time() - start) * 1000)
+                    return ToolResult(tool_name="knowledge_base", success=False, error="工作记忆未初始化", duration_ms=(time.time() - start) * 1000)
                 entity_id = kwargs.get("item_id", "")
                 depth = int(kwargs.get("depth", 1))
                 related = memory.working.graph_query(entity_id, depth)
@@ -97,11 +100,12 @@ class KnowledgeBaseTool(BaseTool):
                     if it:
                         nodes.append(it.model_dump())
                 return ToolResult(
+                    tool_name="knowledge_base",
                     success=True,
                     content=nodes,
                     duration_ms=(time.time() - start) * 1000,
                 )
-            return ToolResult(success=False, error=f"未知 action: {action}", duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="knowledge_base", success=False, error=f"未知 action: {action}", duration_ms=(time.time() - start) * 1000)
         except Exception as e:
             logger.error(f"知识库操作失败: {e}", exc_info=True)
-            return ToolResult(success=False, error=str(e), duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="knowledge_base", success=False, error=str(e), duration_ms=(time.time() - start) * 1000)

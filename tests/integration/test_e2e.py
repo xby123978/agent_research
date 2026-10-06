@@ -14,7 +14,7 @@ if SRC not in sys.path:
 
 from src.agents.planner_agent import PlannerAgent
 from src.common.data_models import PaperMeta
-from src.mcp.client import MCPClient
+from src.mcp_layer.client import MCPClient
 from src.models.llm import _MockLLM
 from src.tools.base import BaseTool, ToolResult, ToolSchema
 

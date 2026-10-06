@@ -5,7 +5,7 @@
 
 servers:
   - name: academic_search
-    transport: inprocess         # 阶段二：进程内调用（非 stdio 独立进程）
+    transport: memory            # memory（进程内会话）| stdio（子进程）| http（远程）
     enabled: true
     description: 学术检索服务（OpenAlex + CrossRef）
     tools:
@@ -13,28 +13,28 @@ servers:
       - search_crossref
 
   - name: filesystem
-    transport: inprocess
+    transport: memory
     enabled: true
     description: 本地文件系统服务（限 outputs/ 与 data/ 目录）
     tools:
       - filesystem
 
   - name: knowledge_base
-    transport: inprocess
+    transport: memory
     enabled: true
     description: 记忆读写与知识图谱查询（对接四层记忆）
     tools:
       - knowledge_base
 
-  - name: document_processing
-    transport: inprocess
+  - name: document_processor
+    transport: memory
     enabled: true
-    description: 文档处理与 PDF 解析（Marker 未安装时打桩降级）
+    description: 文档处理与 PDF 解析（Marker 未安装时降级 PyMuPDF）
     tools:
       - parse_pdf
       - extract_metadata
 
   - name: code_execution
     transport: stdio
-    enabled: false               # 阶段三接入（需沙箱隔离）
+    enabled: false               # 阶段二/三接入（需沙箱隔离）
     description: Python 代码执行服务

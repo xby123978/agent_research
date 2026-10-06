@@ -59,10 +59,10 @@ class FilesystemTool(BaseTool):
             if action == "mkdir":
                 os.makedirs(full, exist_ok=True)
                 return self._ok(f"已创建目录: {rel_path}", start)
-            return ToolResult(success=False, error=f"未知 action: {action}", duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="filesystem", success=False, error=f"未知 action: {action}", duration_ms=(time.time() - start) * 1000)
         except Exception as e:
             logger.error(f"文件系统操作失败: {e}", exc_info=True)
-            return ToolResult(success=False, error=str(e), duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="filesystem", success=False, error=str(e), duration_ms=(time.time() - start) * 1000)
 
     def _resolve(self, rel_path: str) -> str:
         """安全解析路径，禁止路径穿越。"""
@@ -77,10 +77,11 @@ class FilesystemTool(BaseTool):
 
     def _read(self, full: str, start: float) -> ToolResult:
         if not os.path.exists(full):
-            return ToolResult(success=False, error="文件不存在", duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="filesystem", success=False, error="文件不存在", duration_ms=(time.time() - start) * 1000)
         with open(full, encoding="utf-8") as f:
             content = f.read()
         return ToolResult(
+            tool_name="filesystem",
             success=True,
             content=[{"type": "text", "text": content, "path": full}],
             duration_ms=(time.time() - start) * 1000,
@@ -94,9 +95,10 @@ class FilesystemTool(BaseTool):
 
     def _list(self, full: str, start: float) -> ToolResult:
         if not os.path.isdir(full):
-            return ToolResult(success=False, error="目录不存在", duration_ms=(time.time() - start) * 1000)
+            return ToolResult(tool_name="filesystem", success=False, error="目录不存在", duration_ms=(time.time() - start) * 1000)
         entries = os.listdir(full)
         return ToolResult(
+            tool_name="filesystem",
             success=True,
             content=[{"type": "list", "entries": entries, "path": full}],
             duration_ms=(time.time() - start) * 1000,
@@ -104,6 +106,7 @@ class FilesystemTool(BaseTool):
 
     def _ok(self, msg: str, start: float) -> ToolResult:
         return ToolResult(
+            tool_name="filesystem",
             success=True,
             content=[{"type": "text", "text": msg}],
             duration_ms=(time.time() - start) * 1000,

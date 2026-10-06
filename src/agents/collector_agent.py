@@ -12,7 +12,7 @@ from ..common.config import get_env
 from ..common.data_models import PaperMeta, TaskStatus
 from ..common.logger import get_logger
 from ..common.quality_gates import check_collector
-from ..mcp.client import MCPClient, get_mcp_client
+from ..mcp_layer.client import MCPClient, get_mcp_client
 from ..orchestrator.shared_board import SharedBoard
 from .base import BaseAgent
 

@@ -21,7 +21,7 @@ from ..common.data_models import (
 from ..common.logger import get_logger
 from ..common.utils import stage_timeout
 from ..memory.manager import MemoryManager, get_memory
-from ..mcp.client import MCPClient, get_mcp_client
+from ..mcp_layer.client import MCPClient, get_mcp_client
 from ..models.llm import LLMClient, get_llm
 from ..planning.planner import Planner, get_planner
 

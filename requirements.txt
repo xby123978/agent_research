@@ -17,6 +17,9 @@ pydantic>=2.0.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 
+# ===== MCP 协议 =====
+mcp>=1.9,<2              # 官方 MCP SDK（FastMCP Server + ClientSession；2.x 已改名 MCPServer）
+
 # ===== 工具与文档 =====
 arxiv>=2.0.0             # arXiv 检索
 requests>=2.31.0         # Semantic Scholar 等通用 API

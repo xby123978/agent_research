@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.mcp.client import MCPClient
+from src.mcp_layer.client import MCPClient
 from src.tools.base import ToolResult, ToolSchema
 
 

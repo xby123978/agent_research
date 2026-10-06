@@ -40,7 +40,13 @@ memory:
 
 # MCP 协议配置
 mcp:
-  request_timeout: 30           # 秒
+  transport: memory             # memory（进程内会话，默认）| stdio（子进程）| http（远程）
+  # 按 Server 覆盖传输，例如让检索走真正的子进程：
+  # transports:
+  #   academic_search: stdio
+  #   document_processor: stdio
+  request_timeout: 30           # 秒（握手与 tools/list 超时）
+  call_timeout: 120             # 秒（单次工具调用超时）
   max_retries: 3                # 指数退避重试次数
   retry_backoff: 2.0            # 退避因子
 

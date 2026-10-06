@@ -159,15 +159,15 @@
 #### 3.4.1 架构组成
 - **MCP Client**：集成在多Agent编排层，统一管理所有MCP Server的连接、鉴权、能力发现、请求路由、超时重试
 - **MCP Server**：按领域拆分部署，每个Server提供一类标准化工具与资源
-- **传输协议**：本地服务优先使用stdio，远程服务使用HTTP/SSE
+- **传输协议**：本地服务优先使用进程内会话（memory）或stdio，远程服务使用streamable-http
 
 #### 3.4.2 内置MCP服务清单
 | MCP Server | 核心能力 | 部署方式 |
 |------------|----------|----------|
 | 学术检索Server | 论文检索、元数据查询、引用关系 | 自定义封装，基于Semantic Scholar + arXiv API |
 | 文档处理Server | PDF解析、格式转换、元数据提取 | 自定义封装，基于Marker + PyMuPDF |
-| 文件系统Server | 本地文件读写、目录管理 | 官方MCP Filesystem Server |
-| 代码执行Server | Python脚本运行、数据处理 | 官方MCP Python Server |
+| 文件系统Server | 本地文件读写、目录管理 | 自定义封装（本地 pathlib，限 outputs/、data/） |
+| 代码执行Server | Python脚本运行、数据处理 | 官方MCP Python Server（阶段二扩展） |
 | 知识库Server | 记忆读写、知识图谱查询 | 自定义封装，对接记忆模块 |
 
 #### 3.4.3 能力发现与路由
@@ -418,7 +418,7 @@ GET    /api/v1/skills                    获取可用Skill列表
 | 层级 | 技术选型 | 版本要求 |
 |------|----------|----------|
 | 编排框架 | LangGraph | ≥0.2.0 |
-| MCP协议 | 官方Python SDK | ≥0.3.0 |
+| MCP协议 | 官方 mcp Python SDK（FastMCP Server + ClientSession） | ≥1.9,<2 |
 | 向量数据库 | Qdrant（本地持久化模式 / Server） | ≥1.10 |
 | 图数据库 | Neo4j Community | ≥5.15 |
 | PDF解析 | Marker | ≥1.0 |
@@ -487,9 +487,9 @@ research-agent/
 │   │   ├── base.py
 │   │   ├── literature_review.py
 │   │   └── knowledge_card.py
-│   ├── mcp/                   # MCP协议层
-│   │   ├── client.py
-│   │   └── servers/           # 自定义MCP服务
+│   ├── mcp_layer/             # MCP协议层（官方SDK）
+│   │   ├── client.py          # MCP客户端
+│   │   └── servers.py         # 4个MCP Server
 │   ├── jev/                   # JEV决策层
 │   │   ├── evaluator.py
 │   │   └── tasks/

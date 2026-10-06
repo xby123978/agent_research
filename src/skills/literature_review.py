@@ -11,7 +11,7 @@ from typing import Any
 
 from ..common.data_models import PaperMeta
 from ..common.logger import get_logger
-from ..mcp.client import MCPClient, get_mcp_client
+from ..mcp_layer.client import MCPClient, get_mcp_client
 from .base import Skill
 
 logger = get_logger(__name__)
