@@ -178,7 +178,7 @@ def build_ui():
     with gr.Blocks(title="research-agent 深度研究助手") as app:
         gr.Markdown(
             "# 📚 research-agent 个人深度研究助手\n"
-            "阶段三：JEV 决策引擎 + ReAct+ToT 规划 + 全链路质量门限 + 任务档案\n"
+            "阶段三：JEV 决策引擎 + CoT+ToT 规划 + 全链路质量门限 + 任务档案\n"
             "输入研究主题，自动完成规划→检索→整理→生成全流程。"
         )
         with gr.Tab("🔬 研究工作台"):

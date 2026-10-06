@@ -39,7 +39,7 @@
 
 | 技术点 | 落位模块 | 实现状态 |
 |--------|----------|----------|
-| 规划模块 | 多Agent编排层 - 研究规划师 | ✅ ReAct + Tree of Thoughts + 回退机制 |
+| 规划模块 | 多Agent编排层 - 研究规划师 | ✅ 结构化思维链(CoT) + Tree of Thoughts + 回退机制 |
 | 记忆模块 | 独立记忆层 | ✅ 四层记忆架构（短期/工作/长期/偏好） |
 | Tools 工具调用 | MCP协议层 + 工具集层 | ✅ 4 个 MCP Server + 11 个工具 |
 | 多 Agent | 多Agent编排层 | ✅ 四角色（Planner/Collector/Engineer/Writer）+ LangGraph |
@@ -132,7 +132,7 @@ agent_research/
 ├── src/
 │   ├── agents/               # 四角色 Agent
 │   │   ├── base.py           # Agent 抽象基类（safe_execute + 超时隔离）
-│   │   ├── planner_agent_v2.py   # 研究规划师（ReAct + ToT）
+│   │   ├── planner_agent_v2.py   # 研究规划师（CoT + ToT）
 │   │   ├── collector_agent.py    # 文献收集者（检索 + 筛选）
 │   │   ├── engineer_agent.py     # 知识工程师（知识点抽取）
 │   │   └── writer_agent.py       # 报告撰写者（生成 + 事实校验）
@@ -477,7 +477,7 @@ tests/
 - JEV 决策引擎（OpenJev 真实判别模型）
 - 分级执行策略
 - 事实校验与幻觉防控
-- ReAct + Tree of Thoughts 规划
+- 结构化思维链(CoT) + Tree of Thoughts 规划
 - 任务档案可视化
 
 ---

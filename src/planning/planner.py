@@ -1,13 +1,14 @@
-"""规划模块（ReAct + Tree of Thoughts 升级版）。
+"""规划模块（结构化思维链 CoT + Tree of Thoughts）。
 
 对应架构 3.2 规划模块：
-1. ReAct：思考-行动-观察循环，多轮迭代优化计划
+1. 结构化思维链（CoT）：单次 LLM 调用内，先用提示词引导模型分析覆盖维度再产出 JSON。
+   注意：这不是 ReAct——没有多轮循环、没有工具调用、没有真实环境观察。
 2. Tree of Thoughts：生成多个候选方案，JEV 评分择优
 3. JEV 放行校验：计划评分 < 0.75 自动重试（最多 2 轮）
 
 阶段三升级点：
-- 从单次 LLM 调用升级为多轮思考链
-- 候选方案数 N=3，JEV 评分取最优
+- 从单次结构化输出升级为多候选择优
+- 候选方案数 N=2，JEV 评分取最优
 - 失败回退路径：重试 → 降级到基础模板 → 仍失败标记为低质量
 """
 
@@ -25,18 +26,18 @@ from ..models.llm import LLMClient, get_llm
 
 logger = get_logger(__name__)
 
-# ReAct 思考链 prompt
-REACT_THINK_PROMPT = """你是学术研究规划师。请用 ReAct 模式思考：
+# 结构化思维链（CoT）规划 prompt
+COT_PLAN_PROMPT = """你是学术研究规划师。请先分析主题需要覆盖的研究维度，再输出最终方案。
 
 研究主题：{topic}
 研究深度：{depth}
-已知约束：{context}
+规划上下文：{context}
+候选编号：{n}
 
-请按以下格式输出（Thought/Action/Observation 循环）：
-Thought: 分析主题需要覆盖哪些维度
-Action: 生成研究计划候选方案 {n}
-Observation: 评估该方案的覆盖度与可执行性
-（循环 2-3 轮，最后一轮输出最终方案）
+分析要点（无需写出分析过程）：
+- 该主题需要覆盖哪些研究维度（基础概念 / 核心方法 / 研究进展 / 应用案例）
+- 各维度的拆解粒度与依赖关系
+- 方案的可执行性与覆盖度
 
 最终输出 JSON（不要 markdown 包裹）：
 {{
@@ -50,8 +51,7 @@ Observation: 评估该方案的覆盖度与可执行性
       "recommended_tools": ["search_crossref", "search_openalex"]
     }}
   ],
-  "quality_score": 0.0,
-  "thoughts": ["思考过程记录"]
+  "quality_score": 0.0
 }}
 
 约束：
@@ -66,10 +66,10 @@ TOT_MIN_SCORE = 0.75  # JEV 放行阈值
 
 
 class Planner:
-    """研究规划师（ReAct + ToT 升级版）。
+    """研究规划师（结构化思维链 CoT + ToT）。
 
     流程：
-    1. 生成 N 个候选计划（ReAct 多轮思考）
+    1. 生成 N 个候选计划（单次 LLM 调用 + CoT 提示）
     2. JEV 评分每个候选
     3. 取最高分候选
     4. 若最高分 < 阈值，重试（最多 max_rounds 轮）
@@ -86,7 +86,7 @@ class Planner:
     ) -> ResearchPlan:
         """生成研究计划（ToT + JEV 优选）。"""
         depth = ResearchDepth(depth) if isinstance(depth, str) else depth
-        logger.info(f"开始规划(ReAct+ToT): topic={topic} depth={depth.value}")
+        logger.info(f"开始规划(CoT+ToT): topic={topic} depth={depth.value}")
 
         best_plan: ResearchPlan | None = None
         best_score: float = 0.0
@@ -146,16 +146,16 @@ class Planner:
     def _generate_candidate(
         self, topic: str, depth: ResearchDepth, round_idx: int, cand_idx: int
     ) -> ResearchPlan:
-        """生成单个候选计划（ReAct 多轮思考）。"""
+        """生成单个候选计划（单次 LLM 调用 + 结构化思考提示）。"""
         context = f"第{round_idx}轮候选{cand_idx+1}" if round_idx > 1 else "初始规划"
-        prompt = REACT_THINK_PROMPT.format(
+        prompt = COT_PLAN_PROMPT.format(
             topic=topic, depth=depth.value, context=context, n=cand_idx + 1
         )
         raw = self.llm.chat(
             [
                 {
                     "role": "system",
-                    "content": "你是学术研究规划助手，用 ReAct 模式思考，最终只输出 JSON。",
+                    "content": "你是学术研究规划助手，先分析覆盖维度，最终只输出 JSON。",
                 },
                 {"role": "user", "content": prompt},
             ],
