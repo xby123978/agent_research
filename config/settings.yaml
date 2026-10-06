@@ -30,6 +30,8 @@ memory:
   long_term:
     collection_name: research_kb
     vector_size: 1024            # BGE-M3 输出维度（降级模型为 384）
+    # 存储后端（无需 Docker）：默认本地持久化，数据落盘 DATA_DIR/qdrant
+    # 如需多进程共享/大规模，配置环境变量 QDRANT_URL 走 Server 模式
     # 混合召回权重（架构 3.3.1）
     recall_weights:
       vector: 0.6

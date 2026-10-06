@@ -2,14 +2,18 @@
 
 对应架构 3.3.1 长期记忆层：
 - 存储内容：历史研究成果、知识点、实体关系、文献索引
-- 存储介质：Qdrant + 本地文件
+- 存储介质：Qdrant（本地持久化 / Server）+ 内置向量库兜底
 - 生命周期：永久存储，增量更新
-- 召回策略：向量相似度召回（MVP 阶段），阶段二扩展为混合召回
+- 召回策略：混合召回：向量 60% + 关键词(BM25) 20% + 图谱 20%（加权 RRF 融合）
 
-降级策略（架构 6.3）：
-1. 配置了 QDRANT_URL 时优先使用 Qdrant Server（Docker）
-2. 无 Qdrant 时降级为内置纯 Python 向量库（基于余弦相似度），
-   保证无 Docker 环境下两层记忆仍可写入与召回。
+存储后端选择（架构 6.3，三级降级）：
+1. 配置 QDRANT_URL  → Qdrant Server 模式（需 Docker/远程服务，支持多进程）
+2. 配置 QDRANT_PATH → Qdrant 本地持久化模式（默认，无需 Docker，数据落盘）
+                      特殊值 ":memory:" 表示纯内存模式（测试用，不持久化）
+3. 以上均不可用     → 内置纯 Python 向量库（内存，无持久化，最后兜底）
+
+注意：Qdrant 本地持久化模式为单进程独占（数据目录加锁）。
+     多进程场景（如同时运行 API 服务与 Web UI）请改用 Server 模式。
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import math
 import uuid
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -29,6 +34,9 @@ from ..common.logger import get_logger
 from .base import BaseMemory
 
 logger = get_logger(__name__)
+
+# Qdrant 点 id 必须为 UUID，用固定命名空间把业务 id 确定性映射为 UUID
+_QDRANT_NS = uuid.UUID("6f2e6c1a-0000-4000-8000-000000000001")
 
 
 class _LocalVectorStore:
@@ -89,6 +97,7 @@ class LongTermMemory(BaseMemory):
         self.collection = settings.get("collection_name", "research_kb")
         self._embedding = embedding_client  # 延迟注入
         self._qdrant = None
+        self._qdrant_local = False  # 是否本地持久化模式
         self._local: _LocalVectorStore | None = None
         self._dim = 384
         self._init_store()
@@ -103,7 +112,12 @@ class LongTermMemory(BaseMemory):
     def _init_store(self) -> None:
         env = get_env()
         url = (env.get("qdrant_url") or "").strip()
-        # 先确定嵌入维度，用于初始化
+        path = (env.get("qdrant_path") or "").strip()
+        if not path:
+            # 未显式配置时，默认落到 data_dir/qdrant（本地持久化，无需 Docker）
+            path = str(Path(env.get("data_dir", "./data")) / "qdrant")
+
+        # 先确定嵌入维度，用于初始化集合
         try:
             dim = self._get_embedding().dim
         except Exception as e:
@@ -111,35 +125,130 @@ class LongTermMemory(BaseMemory):
             dim = 384
         self._dim = dim
 
-        if url:
-            # 有 Qdrant Server 配置时尝试连接
-            try:
-                from qdrant_client import QdrantClient
-                from qdrant_client.http.models import Distance, VectorParams
-
-                # Qdrant 客户端超时控制（秒）：连接/读写均受限
-                client = QdrantClient(
-                    url=url,
-                    api_key=env.get("qdrant_api_key") or None,
-                    timeout=30,
-                )
-                try:
-                    client.get_collection(self.collection)
-                except Exception:
-                    client.recreate_collection(
-                        collection_name=self.collection,
-                        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-                    )
-                # 仅在 get/recreate 均成功后才赋值，避免脏对象
-                self._qdrant = client
-                logger.info(f"Qdrant 就绪: {self.collection} dim={dim}")
-                return
-            except Exception as e:
-                logger.warning(f"Qdrant 不可用（{e}），降级到内置向量库")
-                self._qdrant = None  # 确保重置，防止脏对象残留
-
-        # 无 Qdrant 配置或连接失败 → 内置降级向量库
+        # 1. Server 模式（多进程/大规模，需 Docker 或远程服务）
+        if url and self._init_qdrant_server(url, env, dim):
+            return
+        # 2. 本地持久化模式（单机默认，无需 Docker，数据落盘）
+        if path and self._init_qdrant_local(path, dim):
+            return
+        # 3. 兜底：内置内存向量库（无持久化）
         self._local = _LocalVectorStore(dim)
+
+    def _init_qdrant_server(self, url: str, env: dict, dim: int) -> bool:
+        """连接 Qdrant Server（需 Docker/远程服务）。"""
+        try:
+            from qdrant_client import QdrantClient
+
+            # Qdrant 客户端超时控制（秒）：连接/读写均受限
+            client = QdrantClient(
+                url=url,
+                api_key=env.get("qdrant_api_key") or None,
+                timeout=30,
+            )
+            self._ensure_collection(client, dim)
+            self._qdrant = client
+            self._qdrant_local = False
+            logger.info(
+                f"Qdrant Server 就绪: {url} collection={self.collection} dim={dim}"
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Qdrant Server 不可用（{e}），尝试本地持久化模式")
+            self._qdrant = None  # 确保重置，防止脏对象残留
+            return False
+
+    def _init_qdrant_local(self, path: str, dim: int) -> bool:
+        """启动 Qdrant 本地持久化模式（无需 Docker，数据落盘）。
+
+        特殊值 ":memory:" 使用纯内存模式（测试用，不持久化）。
+        """
+        try:
+            from qdrant_client import QdrantClient
+
+            if path == ":memory:":
+                client = QdrantClient(":memory:")
+                target = "内存模式（不持久化）"
+            else:
+                Path(path).mkdir(parents=True, exist_ok=True)
+                client = QdrantClient(path=path)
+                target = path
+            self._ensure_collection(client, dim)
+            self._qdrant = client
+            self._qdrant_local = True
+            logger.info(
+                f"Qdrant 本地模式就绪: {target} collection={self.collection} dim={dim}"
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Qdrant 本地模式不可用（{e}），降级到内置向量库（无持久化）")
+            self._qdrant = None
+            return False
+
+    def _ensure_collection(self, client: Any, dim: int) -> None:
+        """确保集合存在（兼容新旧 qdrant-client API）。"""
+        from qdrant_client.http.models import Distance, VectorParams
+
+        vectors_config = VectorParams(size=dim, distance=Distance.COSINE)
+        try:
+            exists = client.collection_exists(self.collection)
+        except Exception:
+            exists = None
+        if exists:
+            return
+        if exists is False:
+            client.create_collection(
+                collection_name=self.collection, vectors_config=vectors_config
+            )
+            return
+        # 旧版本无 collection_exists：get 失败则重建
+        try:
+            client.get_collection(self.collection)
+        except Exception:
+            client.recreate_collection(
+                collection_name=self.collection, vectors_config=vectors_config
+            )
+
+    @staticmethod
+    def _point_id(item_id: str) -> str:
+        """业务 item_id → Qdrant 合法点 id（UUID，确定性映射）。"""
+        return str(uuid.uuid5(_QDRANT_NS, item_id))
+
+    def _qdrant_query(self, vector: list[float], limit: int) -> list[Any]:
+        """Qdrant 向量检索（兼容 query_points 新 API 与旧版 search）。"""
+        if hasattr(self._qdrant, "query_points"):
+            res = self._qdrant.query_points(
+                collection_name=self.collection, query=vector, limit=limit
+            )
+            return list(res.points)
+        return list(
+            self._qdrant.search(
+                collection_name=self.collection, query_vector=vector, limit=limit
+            )
+        )
+
+    def _all_docs(self) -> list[tuple[str, dict[str, Any]]]:
+        """拉取全部文档 (业务id, payload)，供 BM25 关键词召回使用。
+
+        统一后端差异：Qdrant 用 scroll 拉取，兜底库直接读内存列表。
+        """
+        if self._qdrant is not None:
+            try:
+                records, _next = self._qdrant.scroll(
+                    collection_name=self.collection,
+                    limit=10000,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                return [
+                    (str((r.payload or {}).get("_id") or r.id), r.payload or {})
+                    for r in records
+                ]
+            except Exception as e:
+                logger.warning(f"长期记忆全量拉取失败: {e}")
+                return []
+        if self._local is not None:
+            return list(zip(self._local._ids, self._local._payloads))
+        return []
 
     def add(self, item: MemoryItem) -> str:
         if not item.item_id:
@@ -164,20 +273,20 @@ class LongTermMemory(BaseMemory):
             "metadata": item.metadata,
             "source": item.source,
             "created_at": item.created_at.isoformat(),
+            "_id": item.item_id,  # 业务 id（Qdrant 点 id 必须为 UUID，故另存业务 id）
         }
 
         if self._qdrant is not None:
             from qdrant_client.http.models import PointStruct
 
-            point = PointStruct(id=item.item_id, vector=vector, payload=payload)
+            point = PointStruct(
+                id=self._point_id(item.item_id), vector=vector, payload=payload
+            )
             try:
                 self._qdrant.upsert(collection_name=self.collection, points=[point])
             except Exception as e:
-                # 写失败不抛异常，降级到本地向量库，保证主流程不中断
-                logger.warning(f"Qdrant 写入失败，降级到本地向量库: {e}")
-                self._qdrant = None
-                self._local = _LocalVectorStore(len(vector))
-                self._local.upsert(item.item_id, vector, payload)
+                # 不切换后端（避免丢弃已持久化数据），仅记录并跳过本条
+                logger.warning(f"Qdrant 写入失败（本条跳过，后端保持）: {e}")
         else:
             self._local.upsert(item.item_id, vector, payload)
         logger.debug(f"长期记忆写入: {item.item_id}")
@@ -190,11 +299,9 @@ class LongTermMemory(BaseMemory):
         """
         if self._qdrant is not None:
             try:
-                results = self._qdrant.search(
-                    collection_name=self.collection, query_vector=vector, limit=1
-                )
-                if results and results[0].score >= threshold:
-                    return str(results[0].id)
+                points = self._qdrant_query(vector, 1)
+                if points and float(points[0].score) >= threshold:
+                    return str((points[0].payload or {}).get("_id") or points[0].id)
             except Exception as e:
                 logger.warning(f"长期记忆去重查询失败: {e}")
                 return None
@@ -322,10 +429,15 @@ class LongTermMemory(BaseMemory):
         hits: list[tuple[str, float, dict[str, Any]]] = []
         if self._qdrant is not None:
             try:
-                results = self._qdrant.search(
-                    collection_name=self.collection, query_vector=query_vec, limit=top_k
-                )
-                hits = [(str(h.id), float(h.score), h.payload or {}) for h in results]
+                points = self._qdrant_query(query_vec, top_k)
+                hits = [
+                    (
+                        str((p.payload or {}).get("_id") or p.id),
+                        float(p.score),
+                        p.payload or {},
+                    )
+                    for p in points
+                ]
             except Exception as e:
                 logger.warning(f"向量召回失败: {e}")
                 return []
@@ -346,18 +458,14 @@ class LongTermMemory(BaseMemory):
         公式：sum_t IDF(t) * (f(t,d) * (k1+1)) / (f(t,d) + k1*(1-b+b*|d|/avgdl))
         参数：k1=1.5（词频饱和）, b=0.75（文档长度归一化）
 
-        降级方案：无 Qdrant 全文检索时用本地遍历计算 BM25。
+        文档来源统一走 _all_docs()：Qdrant 用 scroll 拉取，兜底库读内存列表。
         """
-        if self._local is None and self._qdrant is None:
-            return []
         # 收集所有文档（mid, payload, 分词列表, 文档长度）
         docs: list[tuple[str, dict[str, Any], list[str], int]] = []
-        if self._local is not None:
-            for i, mid in enumerate(self._local._ids):
-                p = self._local._payloads[i]
-                content = (p.get("content", "") or "").lower()
-                terms = content.split()
-                docs.append((mid, p, terms, len(terms)))
+        for mid, p in self._all_docs():
+            content = (p.get("content", "") or "").lower()
+            terms = content.split()
+            docs.append((mid, p, terms, len(terms)))
         if not docs:
             return []
 
@@ -483,7 +591,9 @@ class LongTermMemory(BaseMemory):
         payload: dict[str, Any] | None = None
         if self._qdrant is not None:
             try:
-                points = self._qdrant.retrieve(collection_name=self.collection, ids=[item_id])
+                points = self._qdrant.retrieve(
+                    collection_name=self.collection, ids=[self._point_id(item_id)]
+                )
                 if points:
                     payload = points[0].payload or {}
             except Exception as e:

@@ -10,7 +10,7 @@ sentencepiece>=0.2.0     # Qwen2Tokenizer slow→fast 转换（OpenJev 必需）
 tiktoken>=0.7.0          # Qwen2Tokenizer 后端（OpenJev 必需）
 
 # ===== 向量与图数据库 =====
-qdrant-client>=1.10.0    # Qdrant Lite（支持本地内存模式）
+qdrant-client>=1.10.0    # Qdrant（本地持久化模式，无需 Docker；亦可接 Server）
 
 # ===== 结构化与配置 =====
 pydantic>=2.0.0

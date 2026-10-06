@@ -39,7 +39,7 @@
 | 编程语言 | Python | 3.11+ |
 | Agent编排 | LangGraph | ≥0.2.0 |
 | MCP协议 | @modelcontextprotocol/sdk（Python版） | ≥0.3.0 |
-| 向量数据库 | Qdrant Lite | ≥1.10 |
+| 向量数据库 | Qdrant（本地持久化模式 / Server） | ≥1.10 |
 | 图数据库 | Neo4j Community | ≥5.15 |
 | 本地模型部署 | Ollama | 最新版 |
 | 主推理模型 | DeepSeek-V3 API / Qwen2.5-14B | - |

@@ -58,6 +58,7 @@ def load_config() -> dict[str, Any]:
         "embedding_fallback_model": os.getenv("EMBEDDING_FALLBACK_MODEL", "all-MiniLM-L6-v2"),
         "qdrant_url": os.getenv("QDRANT_URL", ""),
         "qdrant_api_key": os.getenv("QDRANT_API_KEY", ""),
+        "qdrant_path": os.getenv("QDRANT_PATH", ""),  # 空则默认 DATA_DIR/qdrant
         "s2_api_key": os.getenv("S2_API_KEY", ""),
         "data_dir": os.getenv("DATA_DIR", "./data"),
         "log_dir": os.getenv("LOG_DIR", "./logs"),

@@ -1,4 +1,6 @@
-# Qdrant 向量数据库（阶段二可启用，MVP 使用本地内存模式）
+# Qdrant 向量数据库（可选）
+# 默认无需 Docker：长期记忆使用 Qdrant 本地持久化模式（数据落盘 DATA_DIR/qdrant）。
+# 仅当需要多进程共享或大规模场景时，才启动本服务并配置 QDRANT_URL。
 services:
   qdrant:
     image: qdrant/qdrant:latest
